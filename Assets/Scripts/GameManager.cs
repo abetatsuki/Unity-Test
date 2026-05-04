@@ -1,4 +1,6 @@
-using System.Collections;
+using System;
+using System.Threading;
+using Cysharp.Threading.Tasks;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 using UnityEngine.UI;
@@ -9,8 +11,6 @@ public class GameManager : MonoBehaviour
     [SerializeField] private GameObject loadingScreen;
     [SerializeField] private Slider loadingSlider;
     [SerializeField] private float minimumLoadingScreenTime = 0.5f;
-
-    private Coroutine loadingCoroutine;
 
     private void Awake()
     {
@@ -26,7 +26,7 @@ public class GameManager : MonoBehaviour
             return;
         }
 
-        StartLoading(LoadSceneAsync(sceneName));
+        LoadSceneAsync(sceneName).Forget();
     }
 
     public void LoadScene(int sceneBuildIndex)
@@ -37,36 +37,24 @@ public class GameManager : MonoBehaviour
             return;
         }
 
-        StartLoading(LoadSceneAsync(sceneBuildIndex));
+        LoadSceneAsync(sceneBuildIndex).Forget();
     }
 
-    private void StartLoading(IEnumerator loadRoutine)
+    private async UniTask LoadSceneAsync(string sceneName)
     {
-        if (loadingCoroutine != null)
-        {
-            StopCoroutine(loadingCoroutine);
-        }
-
-        loadingCoroutine = StartCoroutine(loadRoutine);
+        await RunLoadingSequence(SceneManager.LoadSceneAsync(sceneName));
     }
 
-    private IEnumerator LoadSceneAsync(string sceneName)
+    private async UniTask LoadSceneAsync(int sceneBuildIndex)
     {
-        AsyncOperation asyncOperation = SceneManager.LoadSceneAsync(sceneName);
-        yield return RunLoadingSequence(asyncOperation);
+        await RunLoadingSequence(SceneManager.LoadSceneAsync(sceneBuildIndex));
     }
 
-    private IEnumerator LoadSceneAsync(int sceneBuildIndex)
-    {
-        AsyncOperation asyncOperation = SceneManager.LoadSceneAsync(sceneBuildIndex);
-        yield return RunLoadingSequence(asyncOperation);
-    }
-
-    private IEnumerator RunLoadingSequence(AsyncOperation asyncOperation)
+    private async UniTask RunLoadingSequence(AsyncOperation asyncOperation)
     {
         if (asyncOperation == null)
         {
-            yield break;
+            return;
         }
 
         SetLoadingProgress(0f);
@@ -74,32 +62,27 @@ public class GameManager : MonoBehaviour
 
         asyncOperation.allowSceneActivation = false;
         float elapsedTime = 0f;
+        CancellationToken cancellationToken = this.GetCancellationTokenOnDestroy();
 
         while (asyncOperation.progress < 0.9f)
         {
             elapsedTime += Time.deltaTime;
-            float progress = Mathf.Clamp01(asyncOperation.progress / 0.9f);
-            SetLoadingProgress(progress);
-            yield return null;
+            SetLoadingProgress(Mathf.Clamp01(asyncOperation.progress / 0.9f));
+            await UniTask.Yield(PlayerLoopTiming.Update, cancellationToken);
         }
 
         SetLoadingProgress(1f);
 
-        while (elapsedTime < minimumLoadingScreenTime)
+        if (elapsedTime < minimumLoadingScreenTime)
         {
-            elapsedTime += Time.deltaTime;
-            yield return null;
+            int delayMilliseconds = Mathf.CeilToInt((minimumLoadingScreenTime - elapsedTime) * 1000f);
+            await UniTask.Delay(delayMilliseconds, DelayType.DeltaTime, PlayerLoopTiming.Update, cancellationToken);
         }
 
         asyncOperation.allowSceneActivation = true;
-
-        while (!asyncOperation.isDone)
-        {
-            yield return null;
-        }
+        await asyncOperation.ToUniTask(cancellationToken: cancellationToken);
 
         SetLoadingScreenActive(false);
-        loadingCoroutine = null;
     }
 
     private void SetLoadingScreenActive(bool isActive)
