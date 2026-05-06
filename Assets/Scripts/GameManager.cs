@@ -1,4 +1,8 @@
 
+using System;
+using System.Threading;
+using System.Threading.Tasks;
+using Cysharp.Threading.Tasks;
 using UnityEngine;
 
 public class GameManager : Singleton<GameManager>
@@ -8,7 +12,13 @@ public class GameManager : Singleton<GameManager>
 
     }
 
-    private void Update()
+    protected override void OnRelease()
+    {
+
+    }
+
+
+    private async Task Update()
     {
         if (Input.GetKeyDown(KeyCode.Mouse0))
         {
@@ -21,7 +31,9 @@ public class GameManager : Singleton<GameManager>
                     ServiceLocator<IEffectManager>.Bind(new DammyEffectManager());
                 }
 
-                ServiceLocator<IEffectManager>.Instance.PlayEffect(hit.point);
+                CancellationToken token = this.GetCancellationTokenOnDestroy();
+                await UniTask.Delay(TimeSpan.FromSeconds(3f), cancellationToken: token);
+                await ServiceLocator<IEffectManager>.Instance.PlayEffect(hit.point, token);
             }
         }
     }

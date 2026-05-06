@@ -1,9 +1,12 @@
+using System.Threading;
+using Cysharp.Threading.Tasks;
 using UnityEngine;
 
 public class EffectManager : MonoBehaviour, IEffectManager
 {
     [SerializeField]
     private ParticleSystem _effect = null;
+
 
     private void OnEnable()
     {
@@ -14,10 +17,11 @@ public class EffectManager : MonoBehaviour, IEffectManager
     {
         ServiceLocator<IEffectManager>.UnBind(this);
     }
-    public virtual void PlayEffect(Vector3 position)
+    public async virtual UniTask PlayEffect(Vector3 position, CancellationToken token)
     {
         _effect.Stop();
         _effect.transform.position = position;
+        await UniTask.Delay(3000);
         _effect.Play();
     }
 }
